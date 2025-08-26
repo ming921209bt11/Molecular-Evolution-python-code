@@ -1,0 +1,51 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# 定義 Kimura 雙參數 (K2P) 模型的公式
+def ts_k2p(t, alpha, beta):
+    """計算 K2P 模型的轉換差異 (ts)"""
+    return 0.25 + 0.25 * np.exp(-8 * beta * t) - 0.5 * np.exp(-4 * (alpha + beta) * t)
+
+def tv_k2p(t, alpha, beta):
+    """計算 K2P 模型的顛換差異 (tv)"""
+    return 0.5 - 0.5 * np.exp(-8 * beta * t)
+
+# --- 參數設定 ---
+# 設定替換率
+# alpha: 轉換率 (transition rate)
+# beta: 顛換率 (transversion rate)
+# 根據生物學常見假設，我們設定 alpha > beta
+alpha = 0.1
+beta = 0.02
+
+# 設定繪圖的時間範圍
+t = np.linspace(0, 100, 500)
+
+# --- 計算 ts 與 tv 的值 ---
+ts_values = ts_k2p(t, alpha, beta)
+tv_values = tv_k2p(t, alpha, beta)
+
+# --- 繪圖 ---
+# 建立圖表
+plt.figure(figsize=(10, 6))
+
+# 繪製 ts 與 tv 曲線
+plt.plot(t, ts_values, label='Transition difference (ts)', color='blue')
+plt.plot(t, tv_values, label='Transversion difference (tv)', color='red', linestyle='--')
+
+# 加上標題與座標軸標籤
+plt.title('K2P Model: Transition and Transversion Differences Over Time')
+plt.xlabel('Time')
+plt.ylabel('Difference')
+
+# 加上圖例
+plt.legend()
+
+# 加上網格線
+plt.grid(True, linestyle='--', alpha=0.6)
+
+# 設定 y 軸範圍
+plt.ylim(0, 0.6)
+
+# 顯示圖表
+plt.show()
