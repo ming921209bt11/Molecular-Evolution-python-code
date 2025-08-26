@@ -1,0 +1,27 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+# Recalculated Likelihoods
+L1 = 3.5e-07
+L2 = 2.1e-07
+
+# Prior range for P(H1)
+p_H1_values = np.linspace(0, 1, 500)
+p_H2_values = 1 - p_H1_values
+
+# Compute posterior probabilities
+posterior_H1 = (p_H1_values * L1) / (p_H1_values * L1 + p_H2_values * L2)
+posterior_H2 = 1 - posterior_H1
+
+# Plotting
+plt.figure(figsize=(10, 6))
+plt.plot(p_H1_values, posterior_H1, label='Posterior P(H1 | X)', color='blue')
+plt.plot(p_H1_values, posterior_H2, label='Posterior P(H2 | X)', color='red')
+plt.axvline(x=0.5, color='gray', linestyle='--', linewidth=1)
+plt.xlabel('Prior P(H1) → (P(H2) = 1 - P(H1))')
+plt.ylabel('Posterior Probability')
+plt.title('Posterior Probabilities vs Prior P(H1)')
+plt.legend()
+plt.grid(True)
+plt.tight_layout()
+plt.show()
