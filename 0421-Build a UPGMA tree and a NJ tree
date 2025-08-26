@@ -1,0 +1,188 @@
+# Install required libraries
+!pip install biopython scipy matplotlib numpy scikit-bio
+
+import math
+import numpy as np
+from skbio import DistanceMatrix
+from skbio.tree import nj
+from skbio import TreeNode
+from scipy.cluster.hierarchy import linkage, to_tree
+from Bio import Phylo
+from io import StringIO
+import matplotlib.pyplot as plt
+from IPython.display import Image, display
+import os
+
+# === Vertebrate mitochondrial codon table (unchanged)
+codon_table = {
+    'ATA': 'M', 'ATC': 'I', 'ATT': 'I', 'ATG': 'M',
+    'ACA': 'T', 'ACC': 'T', 'ACG': 'T', 'ACT': 'T',
+    'AAC': 'N', 'AAT': 'N', 'AAA': 'K', 'AAG': 'K',
+    'AGC': 'S', 'AGT': 'S', 'AGA': '*', 'AGG': '*',
+    'CTA': 'L', 'CTC': 'L', 'CTG': 'L', 'CTT': 'L',
+    'CCA': 'P', 'CCC': 'P', 'CCG': 'P', 'CCT': 'P',
+    'CAC': 'H', 'CAT': 'H', 'CAA': 'Q', 'CAG': 'Q',
+    'CGA': 'R', 'CGC': 'R', 'CGG': 'R', 'CGT': 'R',
+    'GTA': 'V', 'GTC': 'V', 'GTG': 'V', 'GTT': 'V',
+    'GCA': 'A', 'GCC': 'A', 'GCG': 'A', 'GCT': 'A',
+    'GAC': 'D', 'GAT': 'D', 'GAA': 'E', 'GAG': 'E',
+    'GGA': 'G', 'GGC': 'G', 'GGG': 'G', 'GGT': 'G',
+    'TCA': 'S', 'TCC': 'S', 'TCG': 'S', 'TCT': 'S',
+    'TTC': 'F', 'TTT': 'F', 'TTA': 'L', 'TTG': 'L',
+    'TAC': 'Y', 'TAT': 'Y', 'TAA': '*', 'TAG': '*',
+    'TGC': 'C', 'TGT': 'C', 'TGA': 'W', 'TGG': 'W'
+}
+
+# === Parse .meg
+def parse_mega(filepath):
+    if not os.path.exists(filepath):
+        raise FileNotFoundError(f"File {filepath} not found. Please upload it to Colab.")
+    seqs = {}
+    with open(filepath) as f:
+        current = None
+        for line in f:
+            line = line.strip()
+            if line.startswith("#") and not line.lower().startswith("#mega"):
+                current = line[1:].strip().replace(" ", "_")
+                seqs[current] = ""
+            elif current and line and not line.startswith("!"):
+                seqs[current] += line.replace(" ", "")
+    return seqs
+
+# === Translate
+def translate(seq):
+    return ''.join(
+        codon_table.get(seq[i:i+3].upper(), "X") if "-" not in seq[i:i+3] else "-"
+        for i in range(0, len(seq) - 2, 3)
+    )
+
+# === Poisson distance
+def poisson(s1, s2):
+    aligned = matches = 0
+    for a, b in zip(s1, s2):
+        if a != '-' and b != '-' and a != '*' and b != '*':
+            aligned += 1
+            if a == b:
+                matches += 1
+    return 100.0 if aligned == 0 or matches == 0 else -math.log(matches / aligned)
+
+# === MEGA-compatible Newick writer
+def write_newick_with_lengths(node, label_map, precision=5):
+    if node.is_tip():
+        label = label_map[node.name]
+        length = node.length if node.length is not None else 0.0
+        return f"{label}:{length:.{precision}f}"
+    parts = []
+    for c in node.children:
+        parts.append(write_newick_with_lengths(c, label_map, precision))
+    length = node.length if node.length is not None else 0.0
+    return f"({','.join(parts)}):{length:.{precision}f}"
+
+# === Convert scipy linkage to Newick (for UPGMA)
+def linkage_to_newick(linkage_matrix, labels):
+    def _to_newick(node, labels):
+        if node.is_leaf():
+            return f"{labels[node.id]}:{node.dist/2:.5f}"
+        left = _to_newick(node.left, labels)
+        right = _to_newick(node.right, labels)
+        return f"({left},{right}):{node.dist/2:.5f}"
+    
+    tree = to_tree(linkage_matrix)
+    return f"{_to_newick(tree, labels)};"
+
+# === Visualize tree with Biopython (Improved)
+def plot_tree(newick_str, title, output_file, show_branch_lengths=True):
+    try:
+        tree = Phylo.read(StringIO(newick_str), "newick")
+        
+        # Increase figure size for better spacing
+        plt.figure(figsize=(12, 15))  # Wider and taller figure
+        
+        # Customize branch length labels
+        if show_branch_lengths:
+            Phylo.draw(
+                tree,
+                branch_labels=lambda c: f"{c.branch_length:.5f}" if c.branch_length else None,
+                do_show=False,
+                label_func=lambda c: c.name if c.name else "",  # Show only leaf names
+                label_colors=lambda _: "black",
+                fontsize=10  # Smaller font size for labels
+            )
+        else:
+            Phylo.draw(
+                tree,
+                branch_labels=None,  # Hide branch lengths
+                do_show=False,
+                label_func=lambda c: c.name if c.name else "",
+                label_colors=lambda _: "black",
+                fontsize=10
+            )
+        
+        # Adjust layout and styling
+        plt.title(title, fontsize=14, pad=20)
+        plt.xlabel("Branch Length", fontsize=12)
+        plt.ylabel("Taxa", fontsize=12)
+        
+        # Tight layout to prevent clipping
+        plt.tight_layout()
+        
+        # Save and display
+        plt.savefig(output_file, dpi=300, bbox_inches="tight")
+        plt.close()
+        print(f"Tree saved as {output_file}")
+        display(Image(filename=output_file))
+    except Exception as e:
+        print(f"Error rendering tree: {e}")
+
+# === Main
+try:
+    # Parse and translate sequences
+    seqs = parse_mega("cytb.meg")
+    names = list(seqs)
+    aa_seqs = {name: translate(seqs[name]) for name in names}
+
+    # Compute distance matrix
+    n = len(names)
+    dm = np.zeros((n, n))
+    for i in range(n):
+        for j in range(i):
+            dm[i][j] = dm[j][i] = poisson(aa_seqs[names[i]], aa_seqs[names[j]])
+
+    # === NJ Tree
+    # Construct NJ tree
+    dm_skbio = DistanceMatrix(dm, names)
+    nj_tree = nj(dm_skbio).root_at_midpoint()
+    label_map = {name: name.replace(" ", "_") for name in names}
+    nj_newick = write_newick_with_lengths(nj_tree, label_map) + ";"
+
+    # Save NJ tree to file
+    with open("nj_tree_by_code.nwk", "w") as f:
+        f.write(nj_newick)
+
+    # Visualize NJ tree (with branch lengths)
+    plot_tree(nj_newick, "Neighbor-Joining Tree", "nj_tree.png", show_branch_lengths=True)
+
+    # === UPGMA Tree
+    # Convert distance matrix to condensed form for scipy
+    condensed_dm = dm[np.triu_indices(n, k=1)]
+    # Perform UPGMA clustering
+    linkage_matrix = linkage(condensed_dm, method='average')
+    # Convert to Newick
+    upgma_newick = linkage_to_newick(linkage_matrix, names)
+
+    # Save UPGMA tree to file
+    with open("upgma_tree_by_code.nwk", "w") as f:
+        f.write(upgma_newick)
+
+    # Visualize UPGMA tree (with branch lengths)
+    plot_tree(upgma_newick, "UPGMA Tree", "upgma_tree.png", show_branch_lengths=True)
+
+except FileNotFoundError as e:
+    print(e)
+    print("Please upload 'cytb.meg' to Colab. Use the following code to upload:")
+    print("""
+    from google.colab import files
+    uploaded = files.upload()
+    """)
+except Exception as e:
+    print(f"An error occurred: {e}")
