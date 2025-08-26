@@ -1,0 +1,129 @@
+import numpy as np
+
+# 定義序列
+seq1 = "GATCTCGTCACTACTAATCGTACGTCATGCTGCT"
+seq2 = "GATAGTATTACTAGTACGTTATTTGCCTGCTGC"
+
+# 定義評分標準
+IDENTITY_SCORE = 5      # 相同核苷酸
+TRANSITION_SCORE = -1   # 轉換突變 (A<->G 或 C<->T)
+TRANSVERSION_SCORE = -3 # 顛換突變 (其他類型的變異)
+GAP_PENALTY = -7        # 空位罰分
+
+def score(a, b):
+    """計算兩個核苷酸的比對得分"""
+    if a == b:
+        return IDENTITY_SCORE
+    elif (a == 'A' and b == 'G') or (a == 'G' and b == 'A') or \
+         (a == 'C' and b == 'T') or (a == 'T' and b == 'C'):
+        return TRANSITION_SCORE
+    else:
+        return TRANSVERSION_SCORE
+
+def needleman_wunsch(seq1, seq2):
+    """實現Needleman-Wunsch算法進行全局序列比對"""
+    m, n = len(seq1), len(seq2)
+    
+    # 初始化得分矩陣
+    score_matrix = np.zeros((m+1, n+1))
+    
+    # 初始化回溯矩陣
+    traceback = np.zeros((m+1, n+1), dtype=int)
+    # 0: 斜線(匹配/不匹配), 1: 水平(seq1有空位), 2: 垂直(seq2有空位)
+    
+    # 填充第一列和第一行(對應空位)
+    for i in range(m+1):
+        score_matrix[i, 0] = i * GAP_PENALTY
+        traceback[i, 0] = 2  # 向上移動
+    
+    for j in range(n+1):
+        score_matrix[0, j] = j * GAP_PENALTY
+        traceback[0, j] = 1  # 向左移動
+    
+    # 填充得分矩陣
+    for i in range(1, m+1):
+        for j in range(1, n+1):
+            # 計算三種可能的得分
+            diagonal = score_matrix[i-1, j-1] + score(seq1[i-1], seq2[j-1])  # 匹配或不匹配
+            up = score_matrix[i-1, j] + GAP_PENALTY  # seq2有空位
+            left = score_matrix[i, j-1] + GAP_PENALTY  # seq1有空位
+            
+            # 選擇最高得分
+            score_matrix[i, j] = max(diagonal, up, left)
+            
+            # 記錄移動方向
+            if score_matrix[i, j] == diagonal:
+                traceback[i, j] = 0  # 斜線移動
+            elif score_matrix[i, j] == up:
+                traceback[i, j] = 2  # 向上移動
+            else:
+                traceback[i, j] = 1  # 向左移動
+    
+    # 回溯獲取最佳比對
+    align1, align2 = "", ""
+    i, j = m, n
+    
+    while i > 0 or j > 0:
+        if traceback[i, j] == 0:  # 斜線移動
+            align1 = seq1[i-1] + align1
+            align2 = seq2[j-1] + align2
+            i -= 1
+            j -= 1
+        elif traceback[i, j] == 2:  # 向上移動(seq2有空位)
+            align1 = seq1[i-1] + align1
+            align2 = "-" + align2
+            i -= 1
+        else:  # 向左移動(seq1有空位)
+            align1 = "-" + align1
+            align2 = seq2[j-1] + align2
+            j -= 1
+    
+    return align1, align2, score_matrix[m, n]
+
+# 執行比對
+aligned_seq1, aligned_seq2, final_score = needleman_wunsch(seq1, seq2)
+
+# 輸出比對結果
+print("序列1:", seq1)
+print("序列2:", seq2)
+print("\n最佳比對:")
+print("Aligned Sequence 1:", aligned_seq1)
+print("Aligned Sequence 2:", aligned_seq2)
+print("\n總得分:", final_score)
+
+# 計算得分明細
+def calculate_detailed_score(aligned_seq1, aligned_seq2):
+    identical = 0
+    transitions = 0
+    transversions = 0
+    gaps = 0
+    
+    for i in range(len(aligned_seq1)):
+        if aligned_seq1[i] == '-' or aligned_seq2[i] == '-':
+            gaps += 1
+        elif aligned_seq1[i] == aligned_seq2[i]:
+            identical += 1
+        elif ((aligned_seq1[i] == 'A' and aligned_seq2[i] == 'G') or 
+              (aligned_seq1[i] == 'G' and aligned_seq2[i] == 'A') or
+              (aligned_seq1[i] == 'C' and aligned_seq2[i] == 'T') or
+              (aligned_seq1[i] == 'T' and aligned_seq2[i] == 'C')):
+            transitions += 1
+        else:
+            transversions += 1
+    
+    detail_score = (identical * IDENTITY_SCORE + 
+                   transitions * TRANSITION_SCORE + 
+                   transversions * TRANSVERSION_SCORE + 
+                   gaps * GAP_PENALTY)
+    
+    print("\n得分明細:")
+    print(f"identity: {identical} × {IDENTITY_SCORE} = {identical * IDENTITY_SCORE}")
+    print(f"transition: {transitions} × {TRANSITION_SCORE} = {transitions * TRANSITION_SCORE}")
+    print(f"transversion: {transversions} × {TRANSVERSION_SCORE} = {transversions * TRANSVERSION_SCORE}")
+    print(f"gap: {gaps} × {GAP_PENALTY} = {gaps * GAP_PENALTY}")
+    print(f"Alignment Score: {detail_score}")
+    
+    return detail_score
+
+# 計算詳細得分
+calculate_detailed_score(aligned_seq1, aligned_seq2)
