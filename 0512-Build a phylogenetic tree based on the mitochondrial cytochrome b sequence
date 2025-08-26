@@ -1,0 +1,68 @@
+# 安裝 Biopython
+!pip install biopython
+
+#!/usr/bin/env python3
+from Bio import Phylo
+
+# ─── USER PARAMETERS ────────────────────────────────────────────────
+INPUT_FILE  = "bootstrap_100.nwk"       # original tree (with fractional support)
+OUTPUT_FILE = "hw13_bootstrap_100.nwk"  # output with percent support + polytomies
+THRESHOLD   = 80.0                  # collapse any node with support < THRESHOLD (%)
+# ──────────────────────────────────────────────────────────────────
+
+# 將 Newick 內容寫入檔案
+with open(INPUT_FILE, "w") as f:
+    f.write("((((((((Prionailurus_bengalensis_euptilurus_Cyt-b,Felis_catus_Cyt-b)1.0000,Uncia_uncia_Cyt-b)1.0000,Canis_lupus_familiaris_Cyt-b,((Cervus_elaphus_songaricus_Cyt-b,Ovis_aries_Cyt-b)1.0000,(Equus_asinus_Cyt-b,Ceratotherium_simum_Cyt-b)1.0000)0.5600)0.7100,Oryctolagus_cuniculus_Cyt-b,(Apodemus_chejuensis_Cyt-b,(Mus_musculus_musculus_Cyt-b,(Rattus_praetor_Cyt-b,(Rattus_exulans_Cyt-b,Rattus_rattus_Cyt-b)0.6500)1.0000)0.5300)1.0000)0.7600,Macropus_robustus_Cyt-b)0.6400,(Myotis_lucifugus_Cyt-b,(Desmodus_rotundus_Cyt-b,((Vampyrum_spectrum_Cyt-b,Micronycteris_megalotis_Cyt-b)0.6000,Macrotus_californicus_Cyt-b,Carollia_perspicillata_Cyt-b,Brachyphylla_cavernarum_Cyt-b,Anoura_caudifer_Cyt-b,Tonatia_saurophila_Cyt-b)0.7300)1.0000)0.8500)0.8200,Mammuthus_primigenius_Cyt-b)0.6900,(Homo_sapiens_MT-CYB,Homo_sapiens_neanderthalensis_Cyt-b)1.0000,(Cottus_dzungaricus_Cyt-b,(Trichogaster_leerii_Cyt-b,Colisa_fasciata_Cyt-b)0.9700)1.0000);")
+
+def percentify(conf):
+    """Turn fractional support (0–1) into integer percent (0–100)."""
+    if conf is None or not isinstance(conf, (int, float)):
+        print(f"Warning: Invalid confidence value encountered: {conf}")
+        return None
+    try:
+        return int(round(conf * 100)) if conf <= 1.0 else int(round(conf))
+    except Exception as e:
+        print(f"Error in percentify for conf={conf}: {e}")
+        return None
+
+# 1) Read your tree (branch lengths in .branch_length, raw support in .confidence)
+try:
+    tree = Phylo.read(INPUT_FILE, "newick")
+except Exception as e:
+    print(f"❌ Error reading input file '{INPUT_FILE}': {e}")
+    raise
+
+# 2) Set default branch lengths to 0 for nodes with None
+print("Setting default branch lengths...")
+for cl in tree.find_clades():
+    if cl.branch_length is None:
+        print(f"Setting branch_length to 0 for node with confidence: {cl.confidence}")
+        cl.branch_length = 0.0
+
+# 3) Convert every support to integer percent, drop any comments
+print("Converting confidence values...")
+for cl in tree.find_clades():
+    if cl.confidence is not None:
+        print(f"Node confidence before: {cl.confidence}")
+        cl.confidence = percentify(cl.confidence)
+        print(f"Node confidence after: {cl.confidence}")
+    cl.comment = None
+
+# 4) Collapse nodes whose percent support is strictly below THRESHOLD
+print("Collapsing nodes...")
+for cl in tree.find_clades(order="postorder"):
+    if cl.confidence is not None and isinstance(cl.confidence, (int, float)):
+        print(f"Checking node with confidence: {cl.confidence}")
+        if cl.confidence < THRESHOLD:
+            print(f"Collapsing node with confidence {cl.confidence}")
+            tree.collapse(cl)
+    else:
+        print(f"Skipping node with invalid confidence: {cl.confidence}")
+
+# 5) Write out a pure Newick with integer percentages and branch lengths
+try:
+    Phylo.write(tree, OUTPUT_FILE, "newick")
+    print(f"✅ Wrote collapsed tree with percent support → '{OUTPUT_FILE}'")
+except Exception as e:
+    print(f"❌ Error writing output file '{OUTPUT_FILE}': {e}")
+    raise
