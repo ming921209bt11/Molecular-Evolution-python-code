@@ -1,0 +1,92 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+def simulate_drift(N=100, 
+                   p0=0.5, 
+                   generations=2000, 
+                   replicates=10000, 
+                   record_gens=[1, 5, 20, 100, 500, 2000]):
+    """
+    Simulate random genetic drift for a diploid population of size N.
+    
+    Parameters:
+    -----------
+    N : int
+        Diploid population size (each generation has 2N gene copies).
+    p0 : float
+        Initial allele frequency.
+    generations : int
+        Total number of generations to simulate.
+    replicates : int
+        Number of independent replicate simulations.
+    record_gens : list
+        List of generations at which to record allele-frequency distributions.
+    
+    Returns:
+    --------
+    results : dict
+        A dictionary where keys are the generation numbers (from record_gens)
+        and values are arrays of length 'replicates' containing the
+        allele frequencies at that generation for all replicates.
+    """
+    # Number of gene copies
+    gene_copies = 2 * N
+    
+    # Prepare a dict to hold frequency arrays for the requested generations
+    results = {g: np.zeros(replicates) for g in record_gens}
+    
+    # For each replicate, simulate the random walk
+    for r in range(replicates):
+        p = p0  # start with initial frequency
+        for g in range(1, generations + 1):
+            # Draw from Binomial
+            X = np.random.binomial(gene_copies, p)
+            # Update allele frequency
+            p = X / gene_copies
+            
+            # If this generation is in the record list, store it
+            if g in record_gens:
+                results[g][r] = p
+    
+    return results
+
+def plot_distributions(results, record_gens=[1, 5, 20, 100, 500, 2000]):
+    """
+    Plot histograms of allele-frequency distributions for the specified generations.
+    
+    Parameters:
+    -----------
+    results : dict
+        Dictionary where the keys are generation numbers and the values 
+        are arrays of allele frequencies across replicates.
+    record_gens : list
+        Which generation numbers we will plot.
+    """
+    # Create a separate figure for each generation
+    for g in record_gens:
+        plt.figure()
+        plt.hist(results[g], bins=20, edgecolor='black')  
+        plt.xlabel("Allele Frequency")
+        plt.ylabel("Count (out of {})".format(len(results[g])))
+        plt.title(f"Distribution of Allele Frequencies at Generation {g}")
+        plt.show()
+
+# ---------------------------
+# Example usage:
+# ---------------------------
+if __name__ == "__main__":
+    # You can try different initial frequencies:
+    initial_freqs = [0.1, 0.5, 0.9]
+    
+    for p0 in initial_freqs:
+        print(f"\nSimulating for initial allele frequency p0 = {p0} ...")
+        
+        # Run the simulation
+        drift_results = simulate_drift(N=100, 
+                                       p0=p0, 
+                                       generations=2000, 
+                                       replicates=10000,
+                                       record_gens=[1, 5, 20, 100, 500, 2000])
+        
+        # Plot the distributions
+        plot_distributions(drift_results, record_gens=[1, 5, 20, 100, 500, 2000])
