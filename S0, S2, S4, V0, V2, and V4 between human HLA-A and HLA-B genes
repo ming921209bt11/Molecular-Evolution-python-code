@@ -1,0 +1,135 @@
+# --- 遺傳密碼表 ---
+genetic_code = {
+    'TTT': 'F', 'TTC': 'F', 'TTA': 'L', 'TTG': 'L',
+    'TCT': 'S', 'TCC': 'S', 'TCA': 'S', 'TCG': 'S',
+    'TAT': 'Y', 'TAC': 'Y', 'TAA': '*', 'TAG': '*',
+    'TGT': 'C', 'TGC': 'C', 'TGA': '*', 'TGG': 'W',
+    'CTT': 'L', 'CTC': 'L', 'CTA': 'L', 'CTG': 'L',
+    'CCT': 'P', 'CCC': 'P', 'CCA': 'P', 'CCG': 'P',
+    'CAT': 'H', 'CAC': 'H', 'CAA': 'Q', 'CAG': 'Q',
+    'CGT': 'R', 'CGC': 'R', 'CGA': 'R', 'CGG': 'R',
+    'ATT': 'I', 'ATC': 'I', 'ATA': 'I', 'ATG': 'M',
+    'ACT': 'T', 'ACC': 'T', 'ACA': 'T', 'ACG': 'T',
+    'AAT': 'N', 'AAC': 'N', 'AAA': 'K', 'AAG': 'K',
+    'AGT': 'S', 'AGC': 'S', 'AGA': 'R', 'AGG': 'R',
+    'GTT': 'V', 'GTC': 'V', 'GTA': 'V', 'GTG': 'V',
+    'GCT': 'A', 'GCC': 'A', 'GCA': 'A', 'GCG': 'A',
+    'GAT': 'D', 'GAC': 'D', 'GAA': 'E', 'GAG': 'E',
+    'GGT': 'G', 'GGC': 'G', 'GGA': 'G', 'GGG': 'G'
+}
+
+def get_degeneracy(codon, position):
+    """計算某個密碼子在某位置的簡併性（0, 2, 4）"""
+    bases = ['A', 'T', 'G', 'C']
+    original_aa = genetic_code.get(codon, 'X')
+    synonymous_count = 0
+
+    for base in bases:
+        if base == codon[position]:
+            continue
+        new_codon = list(codon)
+        new_codon[position] = base
+        new_codon = ''.join(new_codon)
+        new_aa = genetic_code.get(new_codon, 'X')
+        if new_aa == original_aa:
+            synonymous_count += 1
+
+    if synonymous_count == 3:
+        return 4
+    elif synonymous_count == 1 or synonymous_count == 2:
+        return 2
+    else:
+        return 0
+
+def classify_sites(sequence):
+    """對序列每個位點進行簡併分類"""
+    site_types = []
+    for i in range(0, len(sequence), 3):
+        codon = sequence[i:i+3]
+        if len(codon) == 3 and all(base in 'ATGC' for base in codon):
+            for pos in range(3):
+                site_types.append(get_degeneracy(codon, pos))
+        else:
+            site_types.extend([0, 0, 0])
+    return site_types
+
+def count_site_types(site_types):
+    """計算 L0, L2, L4"""
+    L0 = site_types.count(0)
+    L2 = site_types.count(2)
+    L4 = site_types.count(4)
+    return L0, L2, L4
+
+def is_transition(base1, base2):
+    """判斷是否為 transition"""
+    purines = {'A', 'G'}
+    pyrimidines = {'C', 'T'}
+    return ((base1 in purines and base2 in purines) or
+            (base1 in pyrimidines and base2 in pyrimidines))
+
+def count_substitutions(seq1, seq2, site_types):
+    """根據位點分類計算 S0, S2, S4 和 V0, V2, V4"""
+    S0 = S2 = S4 = 0
+    V0 = V2 = V4 = 0
+
+    for i in range(min(len(seq1), len(seq2), len(site_types))):
+        if seq1[i] != seq2[i] and seq1[i] in 'ATGC' and seq2[i] in 'ATGC':
+            site_type = site_types[i]
+            if is_transition(seq1[i], seq2[i]):
+                if site_type == 0: S0 += 1
+                elif site_type == 2: S2 += 1
+                elif site_type == 4: S4 += 1
+            else:
+                if site_type == 0: V0 += 1
+                elif site_type == 2: V2 += 1
+                elif site_type == 4: V4 += 1
+
+    return S0, S2, S4, V0, V2, V4
+
+def calculate_lwl_parameters(seq1, seq2, length=240):
+    """主函數：計算 LWL 指標"""
+    seq1 = seq1[:length].upper()
+    seq2 = seq2[:length].upper()
+
+    site_types1 = classify_sites(seq1)
+    site_types2 = classify_sites(seq2)
+
+    L0_1, L2_1, L4_1 = count_site_types(site_types1)
+    L0_2, L2_2, L4_2 = count_site_types(site_types2)
+
+    L0 = (L0_1 + L0_2) / 2
+    L2 = (L2_1 + L2_2) / 2
+    L4 = (L4_1 + L4_2) / 2
+
+    site_types_avg = site_types1[:length]  # 使用第一個序列的分類
+    S0, S2, S4, V0, V2, V4 = count_substitutions(seq1, seq2, site_types_avg)
+
+    return {
+        'L0': L0, 'L2': L2, 'L4': L4,
+        'S0': S0, 'S2': S2, 'S4': S4,
+        'V0': V0, 'V2': V2, 'V4': V4
+    }
+
+# --------------------
+# 載入 HLA 序列檔案
+with open('/mnt/data/HLA-A.txt') as f:
+    seq1 = ''.join(line.strip() for line in f if not line.startswith('>'))
+
+with open('/mnt/data/HLA-B.txt') as f:
+    seq2 = ''.join(line.strip() for line in f if not line.startswith('>'))
+
+# 執行計算
+results = calculate_lwl_parameters(seq1, seq2, 240)
+
+# 輸出結果
+print("\n計算結果：")
+print("-" * 40)
+print(f"L0 : {results['L0']:.1f}")
+print(f"L2 : {results['L2']:.1f}")
+print(f"L4 : {results['L4']:.1f}")
+print(f"S0 : {results['S0']}")
+print(f"S2 : {results['S2']}")
+print(f"S4 : {results['S4']}")
+print(f"V0 : {results['V0']}")
+print(f"V2 : {results['V2']}")
+print(f"V4 : {results['V4']}")
