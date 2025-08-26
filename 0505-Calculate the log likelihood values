@@ -1,0 +1,150 @@
+#!/usr/bin/env python3
+import math
+import numpy as np
+from typing import Dict, List, Tuple
+
+# ────────────────────────────────────────────────────────
+# PARAMETERS
+# ────────────────────────────────────────────────────────
+ALPHA = 0.01
+BETA = 0.002
+ROOT_FREQ = np.array([0.25, 0.25, 0.25, 0.25])  # Uniform root frequencies [A, C, G, T]
+STATES = {'A': 0, 'C': 1, 'G': 2, 'T': 3}
+
+# Alignment of 4 taxa across 9 sites
+SEQS = {
+    '1': ["A", "A", "G", "A", "G", "T", "G", "C", "A"],
+    '2': ["A", "G", "C", "C", "G", "T", "G", "C", "G"],
+    '3': ["A", "G", "A", "T", "A", "T", "C", "C", "A"],
+    '4': ["A", "G", "A", "G", "A", "T", "C", "C", "G"]
+}
+
+# Branch-lengths for topology 1 ((1,2),3),4
+BL1 = {
+    ('Z', '1'): 50,
+    ('Z', '2'): 60,
+    ('Y', 'Z'): 100,
+    ('Y', '3'): 170,
+    ('X', 'Y'): 80,
+    ('X', '4'): 220
+}
+
+# Branch-lengths for topology 2 ((3,4),1),2
+BL2 = {
+    ('Z', '3'): 50,
+    ('Z', '4'): 60,
+    ('Y', 'Z'): 100,
+    ('Y', '1'): 170,
+    ('X', 'Y'): 80,
+    ('X', '2'): 220
+}
+
+# ────────────────────────────────────────────────────────
+# Kimura 2-parameter transition probability matrix
+# ────────────────────────────────────────────────────────
+def k2p_transition_matrix(t: float) -> np.ndarray:
+    """Compute K2P transition probability matrix for time t."""
+    e1 = np.exp(-4 * BETA * t)
+    e2 = np.exp(-2 * (ALPHA + BETA) * t)
+    
+    # Diagonal (same state)
+    p_same = 0.25 + 0.25 * e1 + 0.5 * e2
+    # Transition (A↔G, C↔T)
+    p_trans = 0.25 + 0.25 * e1 - 0.5 * e2
+    # Transversion (e.g., A↔C, A↔T)
+    p_tvers = 0.25 - 0.25 * e1
+    
+    # Transition matrix
+    P = np.full((4, 4), p_tvers)
+    np.fill_diagonal(P, p_same)
+    P[0, 2] = P[2, 0] = P[1, 3] = P[3, 1] = p_trans
+    return P
+
+# ────────────────────────────────────────────────────────
+# Log-likelihood calculation for a site
+# ────────────────────────────────────────────────────────
+def site_log_likelihood(seqs: Dict[str, List[str]], idx: int, 
+                       branch_lengths: Dict[Tuple[str, str], float], 
+                       topology: str) -> float:
+    """
+    Calculate log-likelihood for a site under given topology.
+    Topology: 't1' for ((1,2),3),4 or 't2' for ((3,4),1),2.
+    """
+    # Extract observations
+    obs = {tax: STATES[seqs[tax][idx]] for tax in seqs}
+    
+    if topology == 't1':
+        # Topology 1: ((1,2),3),4
+        # Z: ancestor of 1,2
+        t_z1, t_z2 = branch_lengths[('Z', '1')], branch_lengths[('Z', '2')]
+        P_z1, P_z2 = k2p_transition_matrix(t_z1), k2p_transition_matrix(t_z2)
+        LZ = np.prod([P_z1[z, obs['1']] * P_z2[z, obs['2']] for z in range(4)], axis=0)
+        
+        # Y: ancestor of Z,3
+        t_yz, t_y3 = branch_lengths[('Y', 'Z')], branch_lengths[('Y', '3')]
+        P_yz, P_y3 = k2p_transition_matrix(t_yz), k2p_transition_matrix(t_y3)
+        LY = np.array([P_y3[y, obs['3']] * np.sum(P_yz[y, :] * LZ) for y in range(4)])
+        
+        # X: root, ancestor of Y,4
+        t_xy, t_x4 = branch_lengths[('X', 'Y')], branch_lengths[('X', '4')]
+        P_xy, P_x4 = k2p_transition_matrix(t_xy), k2p_transition_matrix(t_x4)
+        LX = np.array([P_x4[x, obs['4']] * np.sum(P_xy[x, :] * LY) for x in range(4)])
+        
+    elif topology == 't2':
+        # Topology 2: ((3,4),1),2
+        # Z: ancestor of 3,4
+        t_z3, t_z4 = branch_lengths[('Z', '3')], branch_lengths[('Z', '4')]
+        P_z3, P_z4 = k2p_transition_matrix(t_z3), k2p_transition_matrix(t_z4)
+        LZ = np.prod([P_z3[z, obs['3']] * P_z4[z, obs['4']] for z in range(4)], axis=0)
+        
+        # Y: ancestor of Z,1
+        t_yz, t_y1 = branch_lengths[('Y', 'Z')], branch_lengths[('Y', '1')]
+        P_yz, P_y1 = k2p_transition_matrix(t_yz), k2p_transition_matrix(t_y1)
+        LY = np.array([P_y1[y, obs['1']] * np.sum(P_yz[y, :] * LZ) for y in range(4)])
+        
+        # X: root, ancestor of Y,2
+        t_xy, t_x2 = branch_lengths[('X', 'Y')], branch_lengths[('X', '2')]
+        P_xy, P_x2 = k2p_transition_matrix(t_xy), k2p_transition_matrix(t_x2)
+        LX = np.array([P_x2[x, obs['2']] * np.sum(P_xy[x, :] * LY) for x in range(4)])
+    
+    else:
+        raise ValueError("Topology must be 't1' or 't2'")
+    
+    # Compute likelihood and check for validity
+    likelihood = np.sum(ROOT_FREQ * LX)
+    if likelihood <= 0:
+        raise ValueError(f"Non-positive likelihood at site {idx + 1}: {likelihood}")
+    
+    return math.log(likelihood)
+
+# ────────────────────────────────────────────────────────
+# Main function to compute and print results
+# ────────────────────────────────────────────────────────
+def main():
+    sites = [3, 4]  # 1-based site numbers
+    print("Site-specific log-likelihoods:\n")
+    
+    for site in sites:
+        idx = site - 1
+        try:
+            log_f1 = site_log_likelihood(SEQS, idx, BL1, 't1')
+            log_f2 = site_log_likelihood(SEQS, idx, BL2, 't2')
+            print(f"Site {site}:")
+            print(f"  Topology 1: log_e = {log_f1:.6f}, log10 = {log_f1 / math.log(10):.6f}")
+            print(f"  Topology 2: log_e = {log_f2:.6f}, log10 = {log_f2 / math.log(10):.6f}")
+            print()
+        except ValueError as e:
+            print(f"Error at site {site}: {e}")
+    
+    # Combined log-likelihood over sites
+    try:
+        log_L1 = sum(site_log_likelihood(SEQS, s - 1, BL1, 't1') for s in sites)
+        log_L2 = sum(site_log_likelihood(SEQS, s - 1, BL2, 't2') for s in sites)
+        print("Combined over sites 3 & 4:")
+        print(f"Topology 1: log_e = {log_L1:.6f}, log10 = {log_L1 / math.log(10):.6f}")
+        print(f"Topology 2: log_e = {log_L2:.6f}, log10 = {log_L2 / math.log(10):.6f}")
+    except ValueError as e:
+        print(f"Error in combined likelihood: {e}")
+
+if __name__ == "__main__":
+    main()
